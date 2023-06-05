@@ -14,9 +14,8 @@ The script begins by importing several libraries necessary for the operations ca
 - `RColorBrewer`: For color palettes.
 - `reshape2`: For restructuring and aggregating data.
 
-Several variables are then initialized, most of which seem to represent various environmental and simulation parameters (e.g., latitude, mean annual temperature, mean growth rate, mean annual precipitation, radiation, and elevation for different locations, etc.).
+Several variables are then initialized, most of which seem to represent various environmental and simulation parameters (e.g., latitude, mean annual temperature, mean growth rate, mean annual precipitation, radiation, and elevation for different locations, etc.)
 
-```r
 # Libraries
 library(ncdf4)  
 library(chron)  
