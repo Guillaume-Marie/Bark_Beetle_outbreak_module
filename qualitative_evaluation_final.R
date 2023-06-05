@@ -1,0 +1,245 @@
+library(ncdf4)
+library(chron)
+library(lattice)
+library(ggplot2)
+library(gridExtra)
+library(plyr)
+library(RColorBrewer)
+library(reshape2)
+
+# set path and filename
+ncpath <- "/run/media/guigeek/data_works/Beetle_outbreak/FG2_paper/"
+nclat <- c("61.8","55.5","50.9","49.0","48.4","48.7","46.5","41.8")
+ncMAT <- c(4.25,8.18,8.7,8.2,11.2,10.2,4.5,7.2)
+ncmAT <- c(-10.79,-2.74,-3.94,-5.21,0.10,-1.13,-6.34,-3.84)
+ncMGR <- c(1.34,1.45,1.77,1.69,1.80,1.91,1.86,1.43)
+ncMAP <- c(522,811,734,587,653,989,752,1050)
+ncRAD <- c(42.1,49.4,52.5,68.0,53.7,50.3,67.7,68.3)
+ncelev <- c("181","40","385","426","103","100","1730","1560")
+years <- c(1:109)
+ncpath <- "FG2_paper/"
+int= c(19,21,23,25,29,35,39)
+baloss= c(0,8,12,27,32,47,60)
+exp=c("WB","OWB","W","OW","C","OC")
+ncname <- c("HYY","SOR","THA","WET","FON","HES","REN","COL") 
+file =c("SBG","SRF","4dim")
+func = c(sum,mean,mean,min,mean,mean)
+doy = 109
+
+lab01 = c(
+	"4.25" = "HYY",
+	"8.18" = "SOR",
+	"8.7" = "THA",
+	"8.2" = "WET",
+	"11.2" = "FON",
+	"10.2" = "HES",
+	"4.5" = "REN",
+	"7.2" = "COL"
+	)
+	
+	lab02 = c(
+	"HYY(4.3)",
+	"SOR(8.2)",
+	"THA(8.7)",
+	"WET(8.2)",
+	"FON(11.2)",
+	"HES(10.2)",
+	"REN(4.5)",
+	"COL(7.2)"
+	)
+# The palette with grey:
+cbp1 <- c("#999999","#56B4E9","#E69F00", "#F0E442",
+					"#999999","#009E73", "#0072B2", "#D55E00", "#CC79A7")
+
+# The palette with black:
+cbp2 <- c("#0072B2","#009E73","#D55E00","#CC79A7","#0072B2")
+
+# The palette with black:
+cbp3 <- c("#009E73","#D55E00","#CC79A7","#009E73")
+
+l=0
+simu <- data.frame()
+for (k in ncname) {
+	l=l+1
+	for (p in exp) {
+		for (i in int) {
+			for ( n in file) {
+				if (!file.exists(paste(ncpath,k,"FG2",p,i,"_",n,".nc", sep=""))) next
+				ncfname <- paste(ncpath,k,"FG2",p,i,"_",n,".nc", sep="")
+				ncin <- nc_open(ncfname)
+				dname = names(ncin$var)[-(1:3)]
+				q = 0
+				for (j in dname) {
+					q = q+1
+					if (j=="WOOD_VOL_PIX_CUT") {
+						m = as.matrix(ncvar_get(ncin,j))
+						ext_value = as.vector(apply(m,2,sum))
+						#print(ext_value)
+					}
+					else {
+						if (base::grepl("O",p) & n=="SRF") {
+							if (j == "transpir") m = as.matrix(ncvar_get(ncin,j)[4,])
+							else m = as.matrix(ncvar_get(ncin,j))
+							fac <- ((seq_len(nrow(m))-1) %/% 12)+1
+							ext_value = as.vector(apply(m, 2, function(v) tapply(m, fac, func[q][[1]])))
+						}
+						else ext_value = ncvar_get(ncin,j)
+						if (length(dim(ext_value)) > 1) {
+							if (length(dim(ext_value)) > 2) ext_value = ext_value[4,3,]
+							else ext_value = ext_value[4,]
+						}
+					}
+					temp <- data.frame(time = years,
+						site = rep(k,length(years)),
+						exp = rep(p,length(years)),
+						wind = rep(i,length(years)),
+						rad = rep(ncRAD[l],length(years)),
+						mgr = rep(ncMGR[l],length(years)),
+						map = rep(ncMAP[l],length(years)),
+						mat = rep(ncmAT[l],length(years)),
+						elev = rep(ncelev[l],length(years)),
+						lat = rep(nclat[l],length(years)),
+						var = rep(j,length(years)),
+						value = ext_value)
+					simu <- rbind(simu,temp)
+				}
+				nc_close(ncin)
+			}
+		}
+	}
+}
+
+NPP=subset(simu,var=="NPP")
+HET=subset(simu,var=="HET_RESP")
+NBP=NPP
+NBP$value=NPP$value-HET$value
+NBP$var="NBP"
+simu=rbind(simu,NBP)
+var_names= levels(as.factor(simu$var))
+names(simu) = c(
+"time","Fluxnet_Site","exp","wind","rad","mgr",
+"Mean_annual_precipitation","Min_annual_temperature","elev",
+"Latitude","var","value")
+
+BPIpre = 0.13
+period = 12
+res=NULL;f=0
+for (j in int){
+	f=f+1
+	h = 0
+  for (k in ncname){
+  	h = h + 1
+    seqBPI=subset(simu,var=="Beetle_pressure" & exp=="OWB" & 
+    wind==j & Fluxnet_Site==k & time<=period)$value
+    seqstage=subset(simu,var=="Outbreak_stage" & exp=="OWB" & 
+    wind==j & Fluxnet_Site==k & time<=period)$value
+    statel = data.frame(baloss[f],ncMAT[h],k,0,0,0,0,0,0);l=4
+    for (i in 1:length(seqBPI)){
+      BPI = seqBPI[i]
+      stage = seqstage[i]
+      if (l==4) {
+        if (BPI<BPIpre & stage == 0) 
+    	    statel[l]= statel[l]+1
+        else {
+          l=l+1
+          statel[l]= statel[l]+1
+        }
+        next
+      }
+      if (l==5) {
+        if (BPI>BPIpre & stage == 0) statel[l]=statel[l]+1
+        else {
+          if (stage == 1) {
+            l=l+1
+            statel[l]= statel[l]+1
+          }
+          else {
+            l=l+3
+            statel[l]= statel[l]+1
+          }
+        }
+        next
+      }
+      if (l==6) {
+        if (stage == 1) statel[l]=statel[l]+1
+        else {
+          l=l+1
+          statel[l]= statel[l]+1
+        }
+        next
+      } 
+      if (l==7) {
+        if (BPI>BPIpre & (seqBPI[i-1] > BPI)) statel[l]=statel[l]+1
+        else {
+          l=l+1
+          statel[l]= statel[l]+1
+        }
+        next
+      } 
+      if (l==8) {
+        statel[l]=statel[l]+1
+        next
+      }   
+    }
+    statel[9] = cumsum(seqBPI)[period]
+    res=rbind(res,statel)
+  }
+}
+names(res)=c("wind","MAT","Fluxnet_Site","endemicS","buildup",
+"epidemic","postepidemic","endemicR","outbreak_int")
+resM=melt(res,id.vars=c("wind","Fluxnet_Site","MAT","outbreak_int"))
+resM=subset(resM, value!=0)
+
+svg("figure_3.png",width=18, height=18)
+	ggplot(resM, aes(x=outbreak_int/2,y=value)) +
+	geom_bar(aes(fill = variable, width=outbreak_int),stat="identity") + coord_polar("y", start=0) +
+	facet_grid(MAT+Fluxnet_Site~wind, switch = "y")+ scale_fill_manual(values = cbp1) +
+	geom_hline(yintercept = c(0,11,6), linetype=3) + ylab("") + xlab("") +
+	scale_y_continuous(breaks = c(0,11,6), labels=c(0,1,6)) + theme_classic() + 
+	theme(strip.text.y.left = element_text(angle = 0))
+dev.off()
+
+png("figure_4.png",width=900, height=1100)
+	ggplot(subset(simu, var=="NPP" & exp=="OWB"), 
+	aes(y=value, x=time, color=as.factor(wind))) +
+	geom_line(size=1.5) + ylim(0,2.1) + xlim(0,15) + 
+	facet_wrap(vars(Fluxnet_Site,Min_annual_temperature),
+	 nrow = 4, labeller = label_bquote(.(Fluxnet_Site) : .(Min_annual_temperature)~(degree*C)))+
+	theme(strip.text.y.left = element_text(angle = 0)) +
+	ylab("Net Primary Production (tC/ha)")+ xlab("Time since the start of the simulation (year)")+
+	theme_classic(base_size = 17) + theme(legend.position = 'top', legend.spacing.x = unit(1.0, 'cm')) +
+	theme(strip.background = element_blank(), strip.placement = "outside") +
+	guides(color=guide_legend(title="Wind speed max(m/s)"))
+dev.off()
+
+df=subset(simu,var=="NPP")
+DF.t <- ddply(df, .(Fluxnet_Site,exp,wind), transform, cy = cumsum(value))
+ddd=subset(DF.t, var=="NPP" & exp=="OWB" & time==15)
+write.table(ddd,"ddd.csv", row.names=FALSE)
+
+svg("figure_5.png",width=9, height=9)
+	ggplot(ddd, aes(x=cy, y=Fluxnet_Site, fill=as.factor(wind))) + 
+	geom_col(position = "dodge")+
+	theme_classic(base_size = 17) + theme(legend.position = 'top', 
+	legend.spacing.x = unit(1.0, 'cm')) +
+	theme(strip.background = element_blank(), strip.placement = "outside") +
+	guides(fill=guide_legend(title="Wind speed max(m/s)"))+
+	xlab("Cummulative Net primary Production over 15 years(tC/ha/15 years)")+
+	ylab("")
+dev.off()
+
+ddd=subset(DF.t,var=="NBP" & (exp=="OWB"|exp=="OC") & 
+(time==20|time==50|time==100))
+ddd20OC = subset(ddd, time==20 & exp=="OC")
+ddd20OWB = subset(ddd, time==20 & exp=="OWB")
+pdf("figure_6.png",width=8, height=4.5)
+ggplot(ddd, aes(x=as.factor(time), y=cy*365/100, fill=exp))+
+ geom_boxplot()+ scale_fill_manual(values = cbp3)+
+ ylab("Accumulated Net Biome Production (tC/ha)")+ 
+ xlab("Years after the windthrow event")+
+ theme(strip.background=element_blank(), strip.placement="outside") +
+ theme_classic()
+dev.off() 
+
+
+
